@@ -132,50 +132,70 @@ function makeDraggable(box) {
 
 // 計算紅框 RGB 值平均
 function getAverageColor(box) {
+    // 1. 先繪出 video 畫面至 canvas
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
-
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
+    // 2. 抓 video 實際在畫面上的 bounding box
     const videoRect = video.getBoundingClientRect();
+    // 3. 抓紅框在畫面上的 bounding box
+    const boxRect = box.getBoundingClientRect();
+
+    // 4. 紅框左上角在 video 內的相對座標（單位：畫面上的像素）
+    const leftOnDisplay = boxRect.left - videoRect.left;
+    const topOnDisplay = boxRect.top - videoRect.top;
+    // 寬高
+    const boxWidth = boxRect.width;
+    const boxHeight = boxRect.height;
+
+    // 5. 計算比例，換算到 video 原始畫素座標
     const scaleX = video.videoWidth / videoRect.width;
     const scaleY = video.videoHeight / videoRect.height;
+    const imgX = leftOnDisplay * scaleX;
+    const imgY = topOnDisplay * scaleY;
+    const imgW = boxWidth * scaleX;
+    const imgH = boxHeight * scaleY;
 
-let boxLeft, boxTop;
-if (redBoxPositions[box.id]) {
-    boxLeft = redBoxPositions[box.id].left;
-    boxTop = redBoxPositions[box.id].top;
-} else {
-    // 新增紅圈沒記錄，直接抓 style
-    boxLeft = parseInt(box.style.left, 10) || 0;
-    boxTop = parseInt(box.style.top, 10) || 0;
-}
+    // 6. 四捨五入、取整
+    const intX = Math.round(imgX);
+    const intY = Math.round(imgY);
+    const intW = Math.round(imgW);
+    const intH = Math.round(imgH);
 
-    const boxWidth = box.offsetWidth;
-    const boxHeight = box.offsetHeight;
-
-    const boxX = boxLeft * scaleX;
-    const boxY = boxTop * scaleY;
-    const boxW = boxWidth * scaleX;
-    const boxH = boxHeight * scaleY;
-
-    const safeX = Math.max(0, Math.min(boxX, canvas.width - boxW));
-    const safeY = Math.max(0, Math.min(boxY, canvas.height - boxH));
-
-    const imageData = ctx.getImageData(safeX, safeY, boxW, boxH).data;
-
-    let r = 0, g = 0, b = 0, count = 0;
-    for (let i = 0; i < imageData.length; i += 4) {
-        r += imageData[i];
-        g += imageData[i + 1];
-        b += imageData[i + 2];
-        count++;
+    // 防呆
+    if (intW <= 0 || intH <= 0) return { r: 0, g: 0, b: 0 };
+    if (intX < 0 || intY < 0 || intX+intW > canvas.width || intY+intH > canvas.height) {
+        // 若紅框有出界，直接回傳0
+        return { r: 0, g: 0, b: 0 };
     }
 
+    // 7. 取得畫面區域像素資料
+    const imageData = ctx.getImageData(intX, intY, intW, intH).data;
+
+    // 8. 只計算圓內像素
+    let r = 0, g = 0, b = 0, count = 0;
+    const cx = intW / 2;
+    const cy = intH / 2;
+    const radius = Math.min(intW, intH) / 2;
+    for (let y = 0; y < intH; y++) {
+        for (let x = 0; x < intW; x++) {
+            const dx = x - cx;
+            const dy = y - cy;
+            if (dx*dx + dy*dy > radius*radius) continue; // 只算圓內
+            const idx = (y * intW + x) * 4;
+            r += imageData[idx];
+            g += imageData[idx + 1];
+            b += imageData[idx + 2];
+            count++;
+        }
+    }
+    if (count === 0) return { r: 0, g: 0, b: 0 };
     return { r: r / count, g: g / count, b: b / count };
 }
+
 
 //拖曳紅框
 makeDraggable(redBox1);
