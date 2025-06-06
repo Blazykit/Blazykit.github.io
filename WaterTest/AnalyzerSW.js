@@ -10,13 +10,13 @@ const boxLabel = document.getElementById('boxLabel');
 
 const phColorTable = [
 
-    { ph: 4,  color: [160.0, 66.0, 70.0] },
-    { ph: 5,  color: [190.0, 85.0, 76.0] },
-    { ph: 6,  color: [197.0, 200.0, 124.0] },
-    { ph: 7,  color: [140.0, 162.1, 86.4] },
-    { ph: 8,  color: [87.0, 125.0, 85.0] },
-    { ph: 9,  color: [65.0, 63.5, 75.0] },
-    { ph: 10, color: [115.0, 25.8, 46.5] },
+    { ph: 4,  color: [154, 70, 79] },
+    { ph: 5,  color: [165, 81, 81] },
+    { ph: 6,  color: [212, 210, 147] },
+    { ph: 7,  color: [130, 150, 89] },
+    { ph: 8,  color: [90, 142, 90] },
+    { ph: 9,  color: [58, 60, 76] },
+    { ph: 10, color: [115, 38, 66] },
 ];
 
 const oxygenStd = [
@@ -274,54 +274,82 @@ btnTurbidity.addEventListener("click", function () {
     removeFixedCircles();
 });
 
+function rgb2xyz(r, g, b) {
+    r /= 255; g /= 255; b /= 255;
+    r = r > 0.04045 ? Math.pow((r+0.055)/1.055,2.4) : r/12.92;
+    g = g > 0.04045 ? Math.pow((g+0.055)/1.055,2.4) : g/12.92;
+    b = b > 0.04045 ? Math.pow((b+0.055)/1.055,2.4) : b/12.92;
+    var x = r * 0.4124 + g * 0.3576 + b * 0.1805;
+    var y = r * 0.2126 + g * 0.7152 + b * 0.0722;
+    var z = r * 0.0193 + g * 0.1192 + b * 0.9505;
+    return [x*100, y*100, z*100];
+}
+function xyz2lab(x, y, z) {
+    var refX = 95.047, refY = 100.000, refZ = 108.883;
+    x /= refX; y /= refY; z /= refZ;
+    x = x > 0.008856 ? Math.pow(x,1/3) : (7.787*x) + 16/116;
+    y = y > 0.008856 ? Math.pow(y,1/3) : (7.787*y) + 16/116;
+    z = z > 0.008856 ? Math.pow(z,1/3) : (7.787*z) + 16/116;
+    var L = 116*y - 16;
+    var a = 500*(x - y);
+    var b = 200*(y - z);
+    return [L, a, b];
+}
+function rgb2lab(r, g, b) {
+    var xyz = rgb2xyz(r, g, b);
+    return xyz2lab(xyz[0], xyz[1], xyz[2]);
+}
+function deltaE(lab1, lab2) {
+    return Math.sqrt(
+        Math.pow(lab1[0] - lab2[0], 2) +
+        Math.pow(lab1[1] - lab2[1], 2) +
+        Math.pow(lab1[2] - lab2[2], 2)
+    );
+}
+
 
 function getInterpolatedPhValue(r, g, b) {
+    const lab = rgb2lab(r, g, b);
+
     let minDist = Number.MAX_VALUE;
     let minIdx = 0;
 
+    // 建議只計算一次並緩存
+    const phLabTable = phColorTable.map(e => rgb2lab(e.color[0], e.color[1], e.color[2]));
+
     for (let i = 0; i < phColorTable.length; i++) {
-        const ref = phColorTable[i];
-        const dr = r - ref.color[0];
-        const dg = g - ref.color[1];
-        const db = b - ref.color[2];
-        const dist = dr * dr + dg * dg + db * db;
+        const refLab = phLabTable[i];
+        const dist = deltaE(lab, refLab);
         if (dist < minDist) {
             minDist = dist;
             minIdx = i;
         }
     }
 
-    // 插值兩點
-    let idx1 = minIdx;
-    let idx2;
+    let idx1 = minIdx, idx2;
     if (minIdx === 0) {
         idx2 = 1;
     } else if (minIdx === phColorTable.length - 1) {
         idx2 = minIdx - 1;
     } else {
-        // 比較前後哪個鄰點距離近
-        const distPrev = Math.pow(r - phColorTable[minIdx - 1].color[0], 2) +
-                         Math.pow(g - phColorTable[minIdx - 1].color[1], 2) +
-                         Math.pow(b - phColorTable[minIdx - 1].color[2], 2);
-        const distNext = Math.pow(r - phColorTable[minIdx + 1].color[0], 2) +
-                         Math.pow(g - phColorTable[minIdx + 1].color[1], 2) +
-                         Math.pow(b - phColorTable[minIdx + 1].color[2], 2);
+        const distPrev = deltaE(lab, phLabTable[minIdx - 1]);
+        const distNext = deltaE(lab, phLabTable[minIdx + 1]);
         idx2 = (distPrev < distNext) ? minIdx - 1 : minIdx + 1;
     }
 
     const p1 = phColorTable[idx1];
     const p2 = phColorTable[idx2];
+    const lab1 = phLabTable[idx1];
+    const lab2 = phLabTable[idx2];
 
-    // 線性插值百分比
-    const v1 = p2.color.map((c, j) => c - p1.color[j]);
-    const v2 = [r - p1.color[0], g - p1.color[1], b - p1.color[2]];
+    const v1 = [lab2[0] - lab1[0], lab2[1] - lab1[1], lab2[2] - lab1[2]];
+    const v2 = [lab[0] - lab1[0], lab[1] - lab1[1], lab[2] - lab1[2]];
     const dot = v1[0]*v2[0] + v1[1]*v2[1] + v1[2]*v2[2];
     const len2 = v1[0]*v1[0] + v1[1]*v1[1] + v1[2]*v1[2];
     let t = len2 === 0 ? 0 : dot / len2;
     t = Math.max(0, Math.min(1, t));
 
     let ph = p1.ph + (p2.ph - p1.ph) * t;
-    // 邊界修正
     ph = Math.max(phColorTable[0].ph, Math.min(phColorTable[phColorTable.length - 1].ph, ph));
     return Math.round(ph * 10) / 10;
 }
@@ -424,21 +452,22 @@ else if (labelText === "溶氧量" && mainColor) {
         const box = document.getElementById(std.boxId);
         if (!box) { valid = false; break; }
         const color = getMedianColor(box);
-        x.push(color.r);
+        x.push(color.b);   // 只取 B 值
         y.push(std.concentration);
     }
     if (!valid) {
         resultHtml += `<div style="color:red">標定紅圈尚未完整顯示，請確認。</div>`;
     } else {
         const fit = quadraticFit(x, y);
-        const conc = fit.a * mainColor.r * mainColor.r + fit.b * mainColor.r + fit.c;
+        const mainB = mainColor.b;
+        const conc = fit.a * mainB * mainB + fit.b * mainB + fit.c;
         resultHtml += `<div style="margin-top:8px;">
             <b>主圈對應溶氧量：</b>
             <span style="font-size:20px;color:#4CAF50;">${conc.toFixed(2)} ppm</span><br>
             <span style="font-size:12px;color:gray;">
-                標定點R值：${x.map(v=>v.toFixed(1)).join(', ')}<br>
-                主圈R值：${mainColor.r.toFixed(1)}<br>
-                二次回歸方程：O₂ = ${fit.a.toExponential(4)} × R² + ${fit.b.toExponential(4)} × R + ${fit.c.toExponential(4)}
+                標定點B值：${x.map(v=>v.toFixed(1)).join(', ')}<br>
+                主圈B值：${mainB.toFixed(1)}<br>
+                二次回歸方程：O₂ = ${fit.a.toExponential(4)} × B² + ${fit.b.toExponential(4)} × B + ${fit.c.toExponential(4)}
             </span>
         </div>`;
     }
