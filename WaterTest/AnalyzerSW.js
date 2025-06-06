@@ -131,28 +131,22 @@ function makeDraggable(box) {
     document.addEventListener('touchend', stopDragging);
 }
 
-// 計算紅框 RGB 值平均
-function getAverageColor(box) {
-    // 1. 先繪出 video 畫面至 canvas
+// 計算紅框 RGB 值中位數
+function getMedianColor(box) {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    // 2. 抓 video 實際在畫面上的 bounding box
     const videoRect = video.getBoundingClientRect();
-    // 3. 抓紅框在畫面上的 bounding box
     const boxRect = box.getBoundingClientRect();
 
-    // 4. 紅框左上角在 video 內的相對座標（單位：畫面上的像素）
     const leftOnDisplay = boxRect.left - videoRect.left;
     const topOnDisplay = boxRect.top - videoRect.top;
-    // 寬高
     const boxWidth = boxRect.width;
     const boxHeight = boxRect.height;
 
-    // 5. 計算比例，換算到 video 原始畫素座標
     const scaleX = video.videoWidth / videoRect.width;
     const scaleY = video.videoHeight / videoRect.height;
     const imgX = leftOnDisplay * scaleX;
@@ -160,24 +154,19 @@ function getAverageColor(box) {
     const imgW = boxWidth * scaleX;
     const imgH = boxHeight * scaleY;
 
-    // 6. 四捨五入、取整
     const intX = Math.round(imgX);
     const intY = Math.round(imgY);
     const intW = Math.round(imgW);
     const intH = Math.round(imgH);
 
-    // 防呆
     if (intW <= 0 || intH <= 0) return { r: 0, g: 0, b: 0 };
     if (intX < 0 || intY < 0 || intX+intW > canvas.width || intY+intH > canvas.height) {
-        // 若紅框有出界，直接回傳0
         return { r: 0, g: 0, b: 0 };
     }
 
-    // 7. 取得畫面區域像素資料
     const imageData = ctx.getImageData(intX, intY, intW, intH).data;
 
-    // 8. 只計算圓內像素
-    let r = 0, g = 0, b = 0, count = 0;
+    const rArr = [], gArr = [], bArr = [];
     const cx = intW / 2;
     const cy = intH / 2;
     const radius = Math.min(intW, intH) / 2;
@@ -185,16 +174,25 @@ function getAverageColor(box) {
         for (let x = 0; x < intW; x++) {
             const dx = x - cx;
             const dy = y - cy;
-            if (dx*dx + dy*dy > radius*radius) continue; // 只算圓內
+            if (dx*dx + dy*dy > radius*radius) continue;
             const idx = (y * intW + x) * 4;
-            r += imageData[idx];
-            g += imageData[idx + 1];
-            b += imageData[idx + 2];
-            count++;
+            rArr.push(imageData[idx]);
+            gArr.push(imageData[idx + 1]);
+            bArr.push(imageData[idx + 2]);
         }
     }
-    if (count === 0) return { r: 0, g: 0, b: 0 };
-    return { r: r / count, g: g / count, b: b / count };
+    // Helper: 中位數
+    function median(arr) {
+        if (arr.length === 0) return 0;
+        arr.sort((a, b) => a - b);
+        const mid = Math.floor(arr.length / 2);
+        return arr.length % 2 === 0 ? (arr[mid-1] + arr[mid]) / 2 : arr[mid];
+    }
+    return {
+        r: median(rArr),
+        g: median(gArr),
+        b: median(bArr)
+    };
 }
 
 
@@ -329,18 +327,48 @@ function getInterpolatedPhValue(r, g, b) {
 }
 
 
-function linearFit(x, y) {
-    const n = x.length;
-    let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
-    for (let i = 0; i < n; i++) {
-        sumX += x[i];
-        sumY += y[i];
-        sumXY += x[i] * y[i];
-        sumXX += x[i] * x[i];
+function quadraticFit(x, y) {
+    // x 與 y 均為三元素陣列
+    // 建立三元一次聯立方程式
+    const X = [
+        [x[0]*x[0], x[0], 1],
+        [x[1]*x[1], x[1], 1],
+        [x[2]*x[2], x[2], 1]
+    ];
+    const Y = [y[0], y[1], y[2]];
+
+    // 高斯消去法解 3x3 方程組
+    function gaussian(A, b) {
+        const n = b.length;
+        for (let i = 0; i < n; i++) {
+            // 主元化
+            let maxRow = i;
+            for (let k = i + 1; k < n; k++) {
+                if (Math.abs(A[k][i]) > Math.abs(A[maxRow][i])) maxRow = k;
+            }
+            [A[i], A[maxRow]] = [A[maxRow], A[i]];
+            [b[i], b[maxRow]] = [b[maxRow], b[i]];
+            // 歸一化
+            let div = A[i][i];
+            for (let j = i; j < n; j++) A[i][j] /= div;
+            b[i] /= div;
+            // 消元
+            for (let k = i + 1; k < n; k++) {
+                let c = A[k][i];
+                for (let j = i; j < n; j++) A[k][j] -= c * A[i][j];
+                b[k] -= c * b[i];
+            }
+        }
+        // 回代
+        let x = new Array(n);
+        for (let i = n - 1; i >= 0; i--) {
+            x[i] = b[i];
+            for (let j = i + 1; j < n; j++) x[i] -= A[i][j] * x[j];
+        }
+        return x;
     }
-    const a = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
-    const b = (sumY - a * sumX) / n;
-    return { a, b };
+    const coeffs = gaussian(X, Y);
+    return { a: coeffs[0], b: coeffs[1], c: coeffs[2] };
 }
 
 
@@ -370,7 +398,7 @@ analyzeBtn.addEventListener("click", function () {
     for (let i = 0; i < circleIds.length; i++) {
         const box = document.getElementById(circleIds[i]);
         if (!box) continue;
-        const color = getAverageColor(box);
+        const color = getMedianColor(box);
         let label = (i === 0) ? "主圈" : `紅圈${i + 1}`;
         resultHtml += `<div>
             <b>${label}</b> (ID:${circleIds[i]})<br>
@@ -395,26 +423,27 @@ else if (labelText === "溶氧量" && mainColor) {
     for (const std of oxygenStd) {
         const box = document.getElementById(std.boxId);
         if (!box) { valid = false; break; }
-        const color = getAverageColor(box);
+        const color = getMedianColor(box);
         x.push(color.r);
         y.push(std.concentration);
     }
     if (!valid) {
         resultHtml += `<div style="color:red">標定紅圈尚未完整顯示，請確認。</div>`;
     } else {
-        const fit = linearFit(x, y);
-        const conc = fit.a * mainColor.r + fit.b;
+        const fit = quadraticFit(x, y);
+        const conc = fit.a * mainColor.r * mainColor.r + fit.b * mainColor.r + fit.c;
         resultHtml += `<div style="margin-top:8px;">
             <b>主圈對應溶氧量：</b>
             <span style="font-size:20px;color:#4CAF50;">${conc.toFixed(2)} ppm</span><br>
             <span style="font-size:12px;color:gray;">
                 標定點R值：${x.map(v=>v.toFixed(1)).join(', ')}<br>
                 主圈R值：${mainColor.r.toFixed(1)}<br>
-                線性回歸方程：O₂ = ${fit.a.toFixed(4)} × R + ${fit.b.toFixed(2)}
+                二次回歸方程：O₂ = ${fit.a.toExponential(4)} × R² + ${fit.b.toExponential(4)} × R + ${fit.c.toExponential(4)}
             </span>
         </div>`;
     }
 }
+
 else if (labelText === "濁度") {
     // TODO: 濁度演算尚未實作
 }
