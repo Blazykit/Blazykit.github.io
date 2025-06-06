@@ -9,20 +9,21 @@ const redBox1 = document.getElementById('redBox1');
 const boxLabel = document.getElementById('boxLabel');
 
 const phColorTable = [
-    { ph: 1,  color: [175, 12, 8] },
-    { ph: 2,  color: [223, 32, 10] },
-    { ph: 3,  color: [245, 61, 14] },
-    { ph: 4,  color: [255, 97, 97] },
-    { ph: 5,  color: [255, 128, 28] },
-    { ph: 6,  color: [255, 176, 63] },
-    { ph: 7,  color: [213, 218, 119] },
-    { ph: 8,  color: [123, 208, 58] },
-    { ph: 9,  color: [42, 111, 242] },
-    { ph: 10, color: [14, 33, 162] },
-    { ph: 11, color: [21, 28, 97] },
-    { ph: 12, color: [26, 27, 62] }
+
+    { ph: 4,  color: [160.0, 66.0, 70.0] },
+    { ph: 5,  color: [190.0, 85.0, 76.0] },
+    { ph: 6,  color: [197.0, 200.0, 124.0] },
+    { ph: 7,  color: [140.0, 162.1, 86.4] },
+    { ph: 8,  color: [87.0, 125.0, 85.0] },
+    { ph: 9,  color: [65.0, 63.5, 75.0] },
+    { ph: 10, color: [115.0, 25.8, 46.5] },
 ];
 
+const oxygenStd = [
+    { boxId: "redBox2", concentration: 0 },   
+    { boxId: "redBox3", concentration: 4 },   
+    { boxId: "redBox4", concentration: 8 }   
+];
 
 let stream;
 let interval;
@@ -277,9 +278,9 @@ btnTurbidity.addEventListener("click", function () {
 
 
 function getInterpolatedPhValue(r, g, b) {
-    let minIndex = 0;
     let minDist = Number.MAX_VALUE;
-    // 找距離最近的標準點
+    let minIdx = 0;
+
     for (let i = 0; i < phColorTable.length; i++) {
         const ref = phColorTable[i];
         const dr = r - ref.color[0];
@@ -288,36 +289,59 @@ function getInterpolatedPhValue(r, g, b) {
         const dist = dr * dr + dg * dg + db * db;
         if (dist < minDist) {
             minDist = dist;
-            minIndex = i;
+            minIdx = i;
         }
     }
 
-    // 插值：找最近兩個點（左/右），並在線上找比例
-    let idx1 = minIndex;
-    let idx2 = (minIndex === phColorTable.length - 1)
-        ? minIndex - 1
-        : minIndex + 1;
-    if (minIndex === 0) idx2 = 1;
+    // 插值兩點
+    let idx1 = minIdx;
+    let idx2;
+    if (minIdx === 0) {
+        idx2 = 1;
+    } else if (minIdx === phColorTable.length - 1) {
+        idx2 = minIdx - 1;
+    } else {
+        // 比較前後哪個鄰點距離近
+        const distPrev = Math.pow(r - phColorTable[minIdx - 1].color[0], 2) +
+                         Math.pow(g - phColorTable[minIdx - 1].color[1], 2) +
+                         Math.pow(b - phColorTable[minIdx - 1].color[2], 2);
+        const distNext = Math.pow(r - phColorTable[minIdx + 1].color[0], 2) +
+                         Math.pow(g - phColorTable[minIdx + 1].color[1], 2) +
+                         Math.pow(b - phColorTable[minIdx + 1].color[2], 2);
+        idx2 = (distPrev < distNext) ? minIdx - 1 : minIdx + 1;
+    }
 
     const p1 = phColorTable[idx1];
     const p2 = phColorTable[idx2];
 
-    // 向量點積，算色點在線段上的投影比例
+    // 線性插值百分比
     const v1 = p2.color.map((c, j) => c - p1.color[j]);
     const v2 = [r - p1.color[0], g - p1.color[1], b - p1.color[2]];
     const dot = v1[0]*v2[0] + v1[1]*v2[1] + v1[2]*v2[2];
     const len2 = v1[0]*v1[0] + v1[1]*v1[1] + v1[2]*v1[2];
     let t = len2 === 0 ? 0 : dot / len2;
-
-    // 限制t在0~1之間
     t = Math.max(0, Math.min(1, t));
 
-    // 插值得到ph
     let ph = p1.ph + (p2.ph - p1.ph) * t;
-    // 四捨五入到小數點後1位
+    // 邊界修正
+    ph = Math.max(phColorTable[0].ph, Math.min(phColorTable[phColorTable.length - 1].ph, ph));
     return Math.round(ph * 10) / 10;
 }
 
+
+function linearFit(x, y) {
+    const n = x.length;
+    let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+    for (let i = 0; i < n; i++) {
+        sumX += x[i];
+        sumY += y[i];
+        sumXY += x[i] * y[i];
+        sumXX += x[i] * x[i];
+    }
+    const a = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+    const b = (sumY - a * sumX) / n;
+    return { a, b };
+}
 
 
 btnTurbidity.addEventListener("click", function () {
@@ -332,7 +356,6 @@ btnTurbidity.addEventListener("click", function () {
 analyzeBtn.addEventListener("click", function () {
     const labelText = boxLabel.textContent.trim();
 
-    // 只保留這裡，動態決定哪些圈要分析
     let circleIds = ["redBox1"];
     if (labelText === "溶氧量" || labelText === "濁度") {
         for (let i = 2; i <= 4; i++) {
@@ -358,23 +381,45 @@ analyzeBtn.addEventListener("click", function () {
         if (i === 0) mainColor = color;
     }
 
-    // 酸鹼值模式：插值顯示 pH
-    if(labelText === "酸鹼值" && mainColor) {
-        const ph = getInterpolatedPhValue(mainColor.r, mainColor.g, mainColor.b);
+    // 判斷類型並處理進階分析
+    if (labelText === "酸鹼值" && mainColor) {
+    const ph = getInterpolatedPhValue(mainColor.r, mainColor.g, mainColor.b);
+    resultHtml += `<div style="margin-top:8px;">
+        <b>主圈推論 pH：</b>
+        <span style="font-size:20px;color:#1976D2;">${ph.toFixed(1)}</span>
+    </div>`;
+}
+else if (labelText === "溶氧量" && mainColor) {
+    let x = [], y = [];
+    let valid = true;
+    for (const std of oxygenStd) {
+        const box = document.getElementById(std.boxId);
+        if (!box) { valid = false; break; }
+        const color = getAverageColor(box);
+        x.push(color.r);
+        y.push(std.concentration);
+    }
+    if (!valid) {
+        resultHtml += `<div style="color:red">標定紅圈尚未完整顯示，請確認。</div>`;
+    } else {
+        const fit = linearFit(x, y);
+        const conc = fit.a * mainColor.r + fit.b;
         resultHtml += `<div style="margin-top:8px;">
-            <b>主圈推論 pH：</b>
-            <span style="font-size:20px;color:#1976D2;">${ph.toFixed(1)}</span>
+            <b>主圈對應溶氧量：</b>
+            <span style="font-size:20px;color:#4CAF50;">${conc.toFixed(2)} ppm</span><br>
+            <span style="font-size:12px;color:gray;">
+                標定點R值：${x.map(v=>v.toFixed(1)).join(', ')}<br>
+                主圈R值：${mainColor.r.toFixed(1)}<br>
+                線性回歸方程：O₂ = ${fit.a.toFixed(4)} × R + ${fit.b.toFixed(2)}
+            </span>
         </div>`;
     }
-
-    result.innerHTML = resultHtml;
-
-    // 其餘分支預留（可加算式）
-    if(labelText === "溶氧量") {
-        // 溶氧量 算式
-    } else if(labelText === "濁度") {
-        // 濁度 算式
-    } else if(labelText !== "酸鹼值") {
-        alert("請選擇檢測項目！");
-    }
+}
+else if (labelText === "濁度") {
+    // TODO: 濁度演算尚未實作
+}
+else if (labelText !== "酸鹼值" && labelText !== "溶氧量" && labelText !== "濁度") {
+    alert("請選擇檢測項目！");
+}
+result.innerHTML = resultHtml;
 });
