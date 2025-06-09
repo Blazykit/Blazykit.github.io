@@ -8,6 +8,23 @@ const result = document.getElementById('result');
 const redBox1 = document.getElementById('redBox1');
 const boxLabel = document.getElementById('boxLabel');
 
+const dpr = window.devicePixelRatio || 1;
+// 替換原本
+const videoRect = video.getBoundingClientRect();
+const boxRect = box.getBoundingClientRect();
+
+const relLeft = (boxRect.left - videoRect.left) / videoRect.width;
+const relTop = (boxRect.top - videoRect.top) / videoRect.height;
+const relW = boxRect.width / videoRect.width;
+const relH = boxRect.height / videoRect.height;
+
+// 實際用於 getImageData 的位置（*不用乘 devicePixelRatio，因 videoRect 已是畫面像素比）
+const x = Math.round(relLeft * video.videoWidth);
+const y = Math.round(relTop * video.videoHeight);
+const w = Math.round(relW * video.videoWidth);
+const h = Math.round(relH * video.videoHeight);
+
+
 const phColorTable = [
 
     { ph: 4,  color: [154, 70, 79] },
@@ -133,60 +150,46 @@ function makeDraggable(box) {
 
 // 計算紅框 RGB 值中位數
 function getMedianColor(box) {
+    if (!video.videoWidth || !video.videoHeight) return {r:0, g:0, b:0};
+
+    // 取得當下紅框於畫面上的實際位置（以視窗座標為基準）
+    const videoRect = video.getBoundingClientRect();
+    const boxRect = box.getBoundingClientRect();
+
+    // 轉為相對 video 的百分比座標
+    const relLeft = (boxRect.left - videoRect.left) / videoRect.width;
+    const relTop = (boxRect.top - videoRect.top) / videoRect.height;
+    const relW = boxRect.width / videoRect.width;
+    const relH = boxRect.height / videoRect.height;
+
+    // 百分比映射回原始影像座標（這裡不需要 *devicePixelRatio!）
+    const x = Math.round(relLeft * video.videoWidth);
+    const y = Math.round(relTop * video.videoHeight);
+    const w = Math.round(relW * video.videoWidth);
+    const h = Math.round(relH * video.videoHeight);
+
+    // 建立 canvas 並貼上 video 當前畫面
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    const videoRect = video.getBoundingClientRect();
-    const boxRect = box.getBoundingClientRect();
+    // 區域越界則 return
+    if (w <= 0 || h <= 0 || x < 0 || y < 0 || x + w > canvas.width || y + h > canvas.height)
+        return {r:0, g:0, b:0};
 
-    const leftOnDisplay = boxRect.left - videoRect.left;
-    const topOnDisplay = boxRect.top - videoRect.top;
-    const boxWidth = boxRect.width;
-    const boxHeight = boxRect.height;
-
-    const scaleX = video.videoWidth / videoRect.width;
-    const scaleY = video.videoHeight / videoRect.height;
-    const imgX = leftOnDisplay * scaleX;
-    const imgY = topOnDisplay * scaleY;
-    const imgW = boxWidth * scaleX;
-    const imgH = boxHeight * scaleY;
-
-    const intX = Math.round(imgX);
-    const intY = Math.round(imgY);
-    const intW = Math.round(imgW);
-    const intH = Math.round(imgH);
-
-    if (intW <= 0 || intH <= 0) return { r: 0, g: 0, b: 0 };
-    if (intX < 0 || intY < 0 || intX+intW > canvas.width || intY+intH > canvas.height) {
-        return { r: 0, g: 0, b: 0 };
-    }
-
-    const imageData = ctx.getImageData(intX, intY, intW, intH).data;
-
+    // 取得紅框內所有像素
+    const imageData = ctx.getImageData(x, y, w, h).data;
     const rArr = [], gArr = [], bArr = [];
-    const cx = intW / 2;
-    const cy = intH / 2;
-    const radius = Math.min(intW, intH) / 2;
-    for (let y = 0; y < intH; y++) {
-        for (let x = 0; x < intW; x++) {
-            const dx = x - cx;
-            const dy = y - cy;
-            if (dx*dx + dy*dy > radius*radius) continue;
-            const idx = (y * intW + x) * 4;
-            rArr.push(imageData[idx]);
-            gArr.push(imageData[idx + 1]);
-            bArr.push(imageData[idx + 2]);
-        }
+    for (let i = 0; i < imageData.length; i += 4) {
+        rArr.push(imageData[i]);
+        gArr.push(imageData[i + 1]);
+        bArr.push(imageData[i + 2]);
     }
-    // Helper: 中位數
     function median(arr) {
-        if (arr.length === 0) return 0;
         arr.sort((a, b) => a - b);
-        const mid = Math.floor(arr.length / 2);
-        return arr.length % 2 === 0 ? (arr[mid-1] + arr[mid]) / 2 : arr[mid];
+        return arr.length % 2 === 0 ? (arr[arr.length/2-1] + arr[arr.length/2])/2 : arr[Math.floor(arr.length/2)];
     }
     return {
         r: median(rArr),
