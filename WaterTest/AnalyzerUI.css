@@ -149,5 +149,14 @@ button {
     background-color: #c1c168;
 }
 
-
+#versionLabel {
+    position: fixed;
+    bottom: 8px;
+    right: 12px;
+    font-size: 12px;
+    color: #999;
+    font-family: monospace;
+    z-index: 1000;
+    opacity: 0.8;
+}
 
