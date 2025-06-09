@@ -142,19 +142,33 @@ function getMedianColor(box) {
     const videoRect = video.getBoundingClientRect();
     const boxRect = box.getBoundingClientRect();
 
-    const leftOnDisplay = boxRect.left - videoRect.left;
-    const topOnDisplay = boxRect.top - videoRect.top;
-    const boxWidth = boxRect.width;
-    const boxHeight = boxRect.height;
+    const videoAspect = video.videoWidth / video.videoHeight;
+    const rectAspect = videoRect.width / videoRect.height;
 
-    const vw = video.videoWidth || video.offsetWidth;
-    const vh = video.videoHeight || video.offsetHeight;
-    const scaleX = vw / videoRect.width;
-    const scaleY = vh / videoRect.height;
-    const imgX = leftOnDisplay * scaleX;
-    const imgY = topOnDisplay * scaleY;
-    const imgW = boxWidth * scaleX;
-    const imgH = boxHeight * scaleY;
+    let drawWidth, drawHeight, padLeft, padTop;
+
+    if (videoAspect > rectAspect) {
+        drawWidth = videoRect.width;
+        drawHeight = videoRect.width / videoAspect;
+        padLeft = 0;
+        padTop = (videoRect.height - drawHeight) / 2;
+    } else {
+        drawHeight = videoRect.height;
+        drawWidth = videoRect.height * videoAspect;
+        padTop = 0;
+        padLeft = (videoRect.width - drawWidth) / 2;
+    }
+
+    const boxLeftInVideo = boxRect.left - videoRect.left - padLeft;
+    const boxTopInVideo = boxRect.top - videoRect.top - padTop;
+
+    const scaleX = video.videoWidth / drawWidth;
+    const scaleY = video.videoHeight / drawHeight;
+
+    const imgX = boxLeftInVideo * scaleX;
+    const imgY = boxTopInVideo * scaleY;
+    const imgW = boxRect.width * scaleX;
+    const imgH = boxRect.height * scaleY;
 
     const intX = Math.round(imgX);
     const intY = Math.round(imgY);
