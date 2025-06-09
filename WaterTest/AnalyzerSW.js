@@ -289,8 +289,8 @@ btnOxygen.addEventListener("click", function () {
     boxLabel.textContent = "溶氧量";
     removeFixedCircles();
     createFixedCircle('redBox2', 100, 50);
-    createFixedCircle('redBox3', 100, 175);
-    createFixedCircle('redBox4', 100, 300);
+    createFixedCircle('redBox3', 100, 150);
+    createFixedCircle('redBox4', 100, 250);
 });
 btnTurbidity.addEventListener("click", function () {
     redBox1.style.borderColor = '#EF6C00';
