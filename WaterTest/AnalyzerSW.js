@@ -195,6 +195,30 @@ function getMedianColor(box) {
     };
 }
 
+// 取得標定紅圈的 Lab/B值/濃度
+function getOxygenLabTable() {
+    return oxygenStd.map(std => {
+        const box = document.getElementById(std.boxId);
+        if (!box) return null;
+        const color = getMedianColor(box);
+        return { lab: rgb2lab(color.r, color.g, color.b), concentration: std.concentration, b: color.b };
+    });
+}
+
+// Delta-E 線性插值法
+function getOxygenByLab(mainColor, stdLabTable) {
+    const mainLab = rgb2lab(mainColor.r, mainColor.g, mainColor.b);
+    let distances = stdLabTable.map(e => deltaE(mainLab, e.lab));
+    let minIdx = distances.indexOf(Math.min(...distances));
+    let others = distances.slice(); others[minIdx] = Infinity;
+    let secondIdx = others.indexOf(Math.min(...others));
+
+    let c1 = stdLabTable[minIdx].concentration, c2 = stdLabTable[secondIdx].concentration;
+    let d1 = distances[minIdx], d2 = distances[secondIdx];
+    let t = d1 + d2 === 0 ? 0 : d2 / (d1 + d2);
+    return c1 * t + c2 * (1 - t);
+}
+
 
 //拖曳紅框
 makeDraggable(redBox1);
@@ -437,47 +461,44 @@ analyzeBtn.addEventListener("click", function () {
         if (i === 0) mainColor = color;
     }
 
-    // 判斷類型並處理進階分析
+    // pH值
     if (labelText === "酸鹼值" && mainColor) {
-    const ph = getInterpolatedPhValue(mainColor.r, mainColor.g, mainColor.b);
-    resultHtml += `<div style="margin-top:8px;">
-        <b>主圈推論 pH：</b>
-        <span style="font-size:20px;color:#1976D2;">${ph.toFixed(1)}</span>
-    </div>`;
-}
-else if (labelText === "溶氧量" && mainColor) {
-    let x = [], y = [];
-    let valid = true;
-    for (const std of oxygenStd) {
-        const box = document.getElementById(std.boxId);
-        if (!box) { valid = false; break; }
-        const color = getMedianColor(box);
-        x.push(color.b);   // 只取 B 值
-        y.push(std.concentration);
+        const ph = getInterpolatedPhValue(mainColor.r, mainColor.g, mainColor.b);
+        resultHtml += `<div style="margin-top:8px;">
+            <b>主圈推論 pH：</b>
+            <span style="font-size:20px;color:#1976D2;">${ph.toFixed(1)}</span>
+        </div>`;
     }
-    if (!valid) {
+    // 溶氧量 - Lab/Delta-E & B值雙方法
+    else if (labelText === "溶氧量" && mainColor) {
+    let stdLabTable = getOxygenLabTable();
+    if (stdLabTable.some(e => e === null)) {
         resultHtml += `<div style="color:red">標定紅圈尚未完整顯示，請確認。</div>`;
     } else {
-        const fit = quadraticFit(x, y);
-        const mainB = mainColor.b;
-        const conc = fit.a * mainB * mainB + fit.b * mainB + fit.c;
+        // Lab/Delta-E法
+        let conc_lab = getOxygenByLab(mainColor, stdLabTable);
+
+        // B值二次回歸法
+        let x = stdLabTable.map(e => e.b);
+        let y = stdLabTable.map(e => e.concentration);
+        let fit = quadraticFit(x, y);
+        let conc_b = fit.a * mainColor.b * mainColor.b + fit.b * mainColor.b + fit.c;
+
+        // 只顯示兩種方法各自的結果
         resultHtml += `<div style="margin-top:8px;">
-            <b>主圈對應溶氧量：</b>
-            <span style="font-size:20px;color:#4CAF50;">${conc.toFixed(2)} ppm</span><br>
-            <span style="font-size:12px;color:gray;">
-                標定點B值：${x.map(v=>v.toFixed(1)).join(', ')}<br>
-                主圈B值：${mainB.toFixed(1)}<br>
-                二次回歸方程：O₂ = ${fit.a.toExponential(4)} × B² + ${fit.b.toExponential(4)} × B + ${fit.c.toExponential(4)}
-            </span>
+            <b>主圈對應溶氧量：</b><br>
+            <span style="font-size:18px;color:#1e88e5;">${conc_lab.toFixed(2)} ppm (Lab/Delta-E)</span><br>
+            <span style="font-size:18px;color:#43a047;">${conc_b.toFixed(2)} ppm (B值曲線)</span>
         </div>`;
     }
 }
-
-else if (labelText === "濁度") {
-    // TODO: 濁度演算尚未實作
-}
-else if (labelText !== "酸鹼值" && labelText !== "溶氧量" && labelText !== "濁度") {
-    alert("請選擇檢測項目！");
-}
+    // 濁度
+    else if (labelText === "濁度") {
+        // TODO: 濁度演算尚未實作
+    }
+    // 未選擇
+    else if (labelText !== "酸鹼值" && labelText !== "溶氧量" && labelText !== "濁度") {
+        alert("請選擇檢測項目！");
+    }
 result.innerHTML = resultHtml;
 });
