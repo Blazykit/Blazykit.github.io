@@ -8,22 +8,6 @@ const result = document.getElementById('result');
 const redBox1 = document.getElementById('redBox1');
 const boxLabel = document.getElementById('boxLabel');
 
-const dpr = window.devicePixelRatio || 1;
-// 替換原本
-const videoRect = video.getBoundingClientRect();
-const boxRect = box.getBoundingClientRect();
-
-const relLeft = (boxRect.left - videoRect.left) / videoRect.width;
-const relTop = (boxRect.top - videoRect.top) / videoRect.height;
-const relW = boxRect.width / videoRect.width;
-const relH = boxRect.height / videoRect.height;
-
-// 實際用於 getImageData 的位置（*不用乘 devicePixelRatio，因 videoRect 已是畫面像素比）
-const x = Math.round(relLeft * video.videoWidth);
-const y = Math.round(relTop * video.videoHeight);
-const w = Math.round(relW * video.videoWidth);
-const h = Math.round(relH * video.videoHeight);
-
 
 const phColorTable = [
 
@@ -150,36 +134,35 @@ function makeDraggable(box) {
 
 // 計算紅框 RGB 值中位數
 function getMedianColor(box) {
+    // video 必須 ready
     if (!video.videoWidth || !video.videoHeight) return {r:0, g:0, b:0};
 
-    // 取得當下紅框於畫面上的實際位置（以視窗座標為基準）
     const videoRect = video.getBoundingClientRect();
     const boxRect = box.getBoundingClientRect();
 
-    // 轉為相對 video 的百分比座標
+    // 防呆，確保尺寸皆正常
+    if (videoRect.width === 0 || videoRect.height === 0) return {r:0, g:0, b:0};
+
+    // 計算紅框於 video 內部的比例座標
     const relLeft = (boxRect.left - videoRect.left) / videoRect.width;
     const relTop = (boxRect.top - videoRect.top) / videoRect.height;
     const relW = boxRect.width / videoRect.width;
     const relH = boxRect.height / videoRect.height;
 
-    // 百分比映射回原始影像座標（這裡不需要 *devicePixelRatio!）
     const x = Math.round(relLeft * video.videoWidth);
     const y = Math.round(relTop * video.videoHeight);
     const w = Math.round(relW * video.videoWidth);
     const h = Math.round(relH * video.videoHeight);
 
-    // 建立 canvas 並貼上 video 當前畫面
+    if (w <= 0 || h <= 0 || x < 0 || y < 0 || x + w > video.videoWidth || y + h > video.videoHeight)
+        return {r:0, g:0, b:0};
+
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    // 區域越界則 return
-    if (w <= 0 || h <= 0 || x < 0 || y < 0 || x + w > canvas.width || y + h > canvas.height)
-        return {r:0, g:0, b:0};
-
-    // 取得紅框內所有像素
     const imageData = ctx.getImageData(x, y, w, h).data;
     const rArr = [], gArr = [], bArr = [];
     for (let i = 0; i < imageData.length; i += 4) {
