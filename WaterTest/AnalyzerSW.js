@@ -206,17 +206,26 @@ function getOxygenLabTable() {
 }
 
 // Delta-E 線性插值法
-function getOxygenByLab(mainColor, stdLabTable) {
+function getOxygenByLab(mainColor, stdLabTable, tolerance=0.5) {
     const mainLab = rgb2lab(mainColor.r, mainColor.g, mainColor.b);
-    let distances = stdLabTable.map(e => deltaE(mainLab, e.lab));
-    let minIdx = distances.indexOf(Math.min(...distances));
-    let others = distances.slice(); others[minIdx] = Infinity;
-    let secondIdx = others.indexOf(Math.min(...others));
-
-    let c1 = stdLabTable[minIdx].concentration, c2 = stdLabTable[secondIdx].concentration;
-    let d1 = distances[minIdx], d2 = distances[secondIdx];
-    let t = d1 + d2 === 0 ? 0 : d2 / (d1 + d2);
-    return c1 * t + c2 * (1 - t);
+    // 1. 先判斷有無色差非常接近的標定點
+    for (let i = 0; i < stdLabTable.length; i++) {
+        if (deltaE(mainLab, stdLabTable[i].lab) < tolerance) {
+            return stdLabTable[i].concentration;
+        }
+    }
+    // 2. 反距加權插值 (IDW)，以避免單點飆高
+    let weights = [];
+    let totalWeight = 0;
+    let result = 0;
+    for (let i = 0; i < stdLabTable.length; i++) {
+        let d = deltaE(mainLab, stdLabTable[i].lab);
+        let w = 1 / Math.max(d, 1e-6); // 避免除零
+        weights.push(w);
+        totalWeight += w;
+        result += stdLabTable[i].concentration * w;
+    }
+    return result / totalWeight;
 }
 
 
