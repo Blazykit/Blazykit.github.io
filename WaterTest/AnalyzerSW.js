@@ -513,3 +513,37 @@ analyzeBtn.addEventListener("click", function () {
     }
 result.innerHTML = resultHtml;
 });
+
+let isTorchOn = false;
+let track = null;
+
+const flashBtn = document.getElementById('flashToggleBtn');
+
+flashBtn.addEventListener('click', async function () {
+    if (!stream) {
+        alert('攝影機尚未啟動！');
+        return;
+    }
+
+    // 取得攝影機 track
+    if (!track) {
+        track = stream.getVideoTracks()[0];
+    }
+    const capabilities = track.getCapabilities();
+
+    // 檢查是否支援手電筒
+    if (!capabilities.torch) {
+        alert('此裝置不支援手電筒');
+        return;
+    }
+
+    try {
+        isTorchOn = !isTorchOn;
+        await track.applyConstraints({ advanced: [{ torch: isTorchOn }] });
+        flashBtn.textContent = isTorchOn ? '關閉手電筒' : '開啟手電筒';
+    } catch (e) {
+        alert('手電筒操作失敗！');
+        isTorchOn = false;
+        flashBtn.textContent = '開啟手電筒';
+    }
+});
