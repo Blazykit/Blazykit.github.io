@@ -120,24 +120,15 @@ button {
 #btnPH {
     background-color: #2196F3; /* 藍色 */
 }
-#btnPH:hover {
-    background-color: #1976D2;
-}
 
 /* --- 溶氧量 按鈕（綠色）--- */
 #btnOxygen {
     background-color: #4CAF50; /* 綠色 */
 }
-#btnOxygen:hover {
-    background-color: #388E3C;
-}
 
 /* --- 濁度 按鈕（橘色）--- */
 #btnTurbidity {
     background-color: #FF9800; /* 橘色 */
-}
-#btnTurbidity:hover {
-    background-color: #EF6C00;
 }
 
 /* --- 分析 按鈕（色）--- */
@@ -145,17 +136,11 @@ button {
     background-color: #f9f591; /* 色 */
     color: black;
 }
-#analyzeBtn:hover {
-    background-color: #c1c168;
-}
 
 /* --- 手電筒 按鈕（色）--- */
 #flashToggleBtn {
     background-color: #f9f591; /* 色 */
     color: black;
-}
-#flashToggleBtn:hover {
-    background-color: #c1c168;
 }
 
 #versionLabel {
