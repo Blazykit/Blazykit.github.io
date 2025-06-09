@@ -428,9 +428,9 @@ btnTurbidity.addEventListener("click", function () {
     redBox1.style.borderColor = '#EF6C00';
     boxLabel.textContent = "濁度";
     removeFixedCircles();
-    createFixedCircle('redBox2', 100, 50);
-    createFixedCircle('redBox3', 100, 175);
-    createFixedCircle('redBox4', 100, 300);
+    createFixedCircle('redBox2', 100, 75);
+    createFixedCircle('redBox3', 100, 200);
+    createFixedCircle('redBox4', 100, 325);
 });
 
 analyzeBtn.addEventListener("click", function () {

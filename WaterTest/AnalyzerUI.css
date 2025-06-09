@@ -3,7 +3,7 @@ html, body {
     margin: 0;
     padding: 0;
     height: 100%;
-    /*touch-action: none;  */         /* 禁止手指滑動造成整頁滾動 */
+    touch-action: none;          /* 禁止手指滑動造成整頁滾動 */
     overscroll-behavior: contain;
     font-family: 'Segoe UI', sans-serif;
     background: #f7fff5;
