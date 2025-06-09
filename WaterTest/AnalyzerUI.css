@@ -149,6 +149,15 @@ button {
     background-color: #c1c168;
 }
 
+/* --- 手電筒 按鈕（色）--- */
+#flashToggleBtn {
+    background-color: #f9f591; /* 色 */
+    color: black;
+}
+#flashToggleBtn:hover {
+    background-color: #c1c168;
+}
+
 #versionLabel {
     position: fixed;
     bottom: 8px;
