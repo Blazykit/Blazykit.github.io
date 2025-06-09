@@ -453,7 +453,7 @@ analyzeBtn.addEventListener("click", function () {
         const color = getMedianColor(box);
         let label = (i === 0) ? "主圈" : `紅圈${i + 1}`;
         resultHtml += `<div>
-            <b>${label}</b> (ID:${circleIds[i]})<br>
+
             R: ${color.r.toFixed(1)}　
             G: ${color.g.toFixed(1)}　
             B: ${color.b.toFixed(1)}
