@@ -8,6 +8,7 @@ const result = document.getElementById('result');
 const redBox1 = document.getElementById('redBox1');
 const boxLabel = document.getElementById('boxLabel');
 
+
 const phColorTable = [
 
     { ph: 4,  color: [154, 70, 79] },
@@ -25,6 +26,13 @@ const oxygenStd = [
     { boxId: "redBox4", concentration: 8 }   
 ];
 
+const turbidityStd = [
+    { boxId: "redBox2", turbidity: 0 },    // 0 JTU
+    { boxId: "redBox3", turbidity: 40 },   // 40 JTU
+    { boxId: "redBox4", turbidity: 100 }   // 100 JTU
+];
+
+
 let stream;
 let interval;
 let logRGBValues = [];
@@ -32,6 +40,78 @@ let logRGBValues = [];
 let redBoxPositions = {
     redBox1: { left: 0, top: 0 },
 };
+
+
+function getContrast(box) {
+    // 取得主圈區域像素資料
+    if (!video.videoWidth || !video.videoHeight) return 0;
+
+    const videoRect = video.getBoundingClientRect();
+    const boxRect = box.getBoundingClientRect();
+
+    // 紅框在 video 內的相對座標
+    const relLeft = (boxRect.left - videoRect.left) / videoRect.width;
+    const relTop = (boxRect.top - videoRect.top) / videoRect.height;
+    const relW = boxRect.width / videoRect.width;
+    const relH = boxRect.height / videoRect.height;
+
+    const x = Math.round(relLeft * video.videoWidth);
+    const y = Math.round(relTop * video.videoHeight);
+    const w = Math.round(relW * video.videoWidth);
+    const h = Math.round(relH * video.videoHeight);
+
+    if (w <= 0 || h <= 0 || x < 0 || y < 0 || x + w > video.videoWidth || y + h > video.videoHeight)
+        return 0;
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    const imageData = ctx.getImageData(x, y, w, h).data;
+    const LArr = [];
+
+    for (let i = 0; i < imageData.length; i += 4) {
+        // RGB to grayscale luminance (ITU-R BT.709)
+        let r = imageData[i], g = imageData[i+1], b = imageData[i+2];
+        let L = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        LArr.push(L);
+    }
+    // 亮度排序
+    LArr.sort((a, b) => a - b);
+    let n = LArr.length;
+    if (n === 0) return 0;
+
+    // 最暗10%、最亮10%
+    let percent = 0.1;
+    let nPart = Math.max(1, Math.floor(n * percent));
+
+    let black = LArr.slice(0, nPart).reduce((s, v) => s + v, 0) / nPart;
+    let white = LArr.slice(n - nPart, n).reduce((s, v) => s + v, 0) / nPart;
+
+    // 避免0除
+    if (black + white === 0) return 0;
+    let contrast = (white - black) / (white + black);
+    return contrast;
+}
+
+function getTurbidityCurveTable() {
+    return turbidityStd.map(std => {
+        let box = document.getElementById(std.boxId);
+        if (!box) return null;
+        let contrast = getContrast(box);
+        return { contrast: contrast, turbidity: std.turbidity };
+    });
+}
+
+function getTurbidityFromCurve(mainContrast, stdCurveTable) {
+    let x = stdCurveTable.map(e => e.contrast);
+    let y = stdCurveTable.map(e => e.turbidity);
+    let fit = quadraticFit(x, y); // 您原本已經寫好
+    return fit.a * mainContrast * mainContrast + fit.b * mainContrast + fit.c;
+}
+
 
 // 啟動攝影機功能
 async function startCamera() {
@@ -133,76 +213,45 @@ function makeDraggable(box) {
 
 // 計算紅框 RGB 值中位數
 function getMedianColor(box) {
+    // video 必須 ready
+    if (!video.videoWidth || !video.videoHeight) return {r:0, g:0, b:0};
+
+    const videoRect = video.getBoundingClientRect();
+    const boxRect = box.getBoundingClientRect();
+
+    // 防呆，確保尺寸皆正常
+    if (videoRect.width === 0 || videoRect.height === 0) return {r:0, g:0, b:0};
+
+    // 計算紅框於 video 內部的比例座標
+    const relLeft = (boxRect.left - videoRect.left) / videoRect.width;
+    const relTop = (boxRect.top - videoRect.top) / videoRect.height;
+    const relW = boxRect.width / videoRect.width;
+    const relH = boxRect.height / videoRect.height;
+
+    const x = Math.round(relLeft * video.videoWidth);
+    const y = Math.round(relTop * video.videoHeight);
+    const w = Math.round(relW * video.videoWidth);
+    const h = Math.round(relH * video.videoHeight);
+
+    if (w <= 0 || h <= 0 || x < 0 || y < 0 || x + w > video.videoWidth || y + h > video.videoHeight)
+        return {r:0, g:0, b:0};
+
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    const videoRect = video.getBoundingClientRect();
-    const boxRect = box.getBoundingClientRect();
-
-    const videoAspect = video.videoWidth / video.videoHeight;
-    const rectAspect = videoRect.width / videoRect.height;
-
-    let drawWidth, drawHeight, padLeft, padTop;
-
-    if (videoAspect > rectAspect) {
-        drawWidth = videoRect.width;
-        drawHeight = videoRect.width / videoAspect;
-        padLeft = 0;
-        padTop = (videoRect.height - drawHeight) / 2;
-    } else {
-        drawHeight = videoRect.height;
-        drawWidth = videoRect.height * videoAspect;
-        padTop = 0;
-        padLeft = (videoRect.width - drawWidth) / 2;
-    }
-
-    const boxLeftInVideo = boxRect.left - videoRect.left - padLeft;
-    const boxTopInVideo = boxRect.top - videoRect.top - padTop;
-
-    const scaleX = video.videoWidth / drawWidth;
-    const scaleY = video.videoHeight / drawHeight;
-
-    const imgX = boxLeftInVideo * scaleX;
-    const imgY = boxTopInVideo * scaleY;
-    const imgW = boxRect.width * scaleX;
-    const imgH = boxRect.height * scaleY;
-
-    const intX = Math.round(imgX);
-    const intY = Math.round(imgY);
-    const intW = Math.round(imgW);
-    const intH = Math.round(imgH);
-
-    if (intW <= 0 || intH <= 0) return { r: 0, g: 0, b: 0 };
-    if (intX < 0 || intY < 0 || intX+intW > canvas.width || intY+intH > canvas.height) {
-        return { r: 0, g: 0, b: 0 };
-    }
-
-    const imageData = ctx.getImageData(intX, intY, intW, intH).data;
-
+    const imageData = ctx.getImageData(x, y, w, h).data;
     const rArr = [], gArr = [], bArr = [];
-    const cx = intW / 2;
-    const cy = intH / 2;
-    const radius = Math.min(intW, intH) / 2;
-    for (let y = 0; y < intH; y++) {
-        for (let x = 0; x < intW; x++) {
-            const dx = x - cx;
-            const dy = y - cy;
-            if (dx*dx + dy*dy > radius*radius) continue;
-            const idx = (y * intW + x) * 4;
-            rArr.push(imageData[idx]);
-            gArr.push(imageData[idx + 1]);
-            bArr.push(imageData[idx + 2]);
-        }
+    for (let i = 0; i < imageData.length; i += 4) {
+        rArr.push(imageData[i]);
+        gArr.push(imageData[i + 1]);
+        bArr.push(imageData[i + 2]);
     }
-    // Helper: 中位數
     function median(arr) {
-        if (arr.length === 0) return 0;
         arr.sort((a, b) => a - b);
-        const mid = Math.floor(arr.length / 2);
-        return arr.length % 2 === 0 ? (arr[mid-1] + arr[mid]) / 2 : arr[mid];
+        return arr.length % 2 === 0 ? (arr[arr.length/2-1] + arr[arr.length/2])/2 : arr[Math.floor(arr.length/2)];
     }
     return {
         r: median(rArr),
@@ -313,8 +362,8 @@ btnOxygen.addEventListener("click", function () {
     redBox1.style.borderColor = '#4CAF50';
     boxLabel.textContent = "溶氧量";
     removeFixedCircles();
-    createFixedCircle('redBox2', 100, 75);
-    createFixedCircle('redBox3', 100, 125);
+    createFixedCircle('redBox2', 100, 25);
+    createFixedCircle('redBox3', 100, 100);
     createFixedCircle('redBox4', 100, 175);
 });
 btnTurbidity.addEventListener("click", function () {
@@ -453,9 +502,9 @@ btnTurbidity.addEventListener("click", function () {
     redBox1.style.borderColor = '#EF6C00';
     boxLabel.textContent = "濁度";
     removeFixedCircles();
-    createFixedCircle('redBox2', 100, 75);
-    createFixedCircle('redBox3', 100, 200);
-    createFixedCircle('redBox4', 100, 325);
+    createFixedCircle('redBox2', 100, 25);
+    createFixedCircle('redBox3', 100, 100);
+    createFixedCircle('redBox4', 100, 175);
 });
 
 analyzeBtn.addEventListener("click", function () {
@@ -518,46 +567,23 @@ analyzeBtn.addEventListener("click", function () {
     }
 }
     // 濁度
-    else if (labelText === "濁度") {
-        // TODO: 濁度演算尚未實作
+   else if (labelText === "濁度" && mainColor) {
+    let stdCurveTable = getTurbidityCurveTable();
+    if (stdCurveTable.some(e => e === null)) {
+        resultHtml += `<div style="color:red">標定紅圈尚未完整顯示，請確認。</div>`;
+    } else {
+        let mainContrast = getContrast(redBox1);
+        let turbidity = getTurbidityFromCurve(mainContrast, stdCurveTable);
+        resultHtml += `<div style="margin-top:8px;">
+            <b>主圈對應濁度：</b><br>
+            <span style="font-size:18px;color:#EF6C00;">${turbidity.toFixed(2)} JTU (對比度曲線)</span>
+            <br>主圈對比度: ${mainContrast.toFixed(4)}
+        </div>`;
     }
+}
     // 未選擇
     else if (labelText !== "酸鹼值" && labelText !== "溶氧量" && labelText !== "濁度") {
         alert("請選擇檢測項目！");
     }
 result.innerHTML = resultHtml;
-});
-
-let isTorchOn = false;
-let track = null;
-
-const flashBtn = document.getElementById('flashToggleBtn');
-
-flashBtn.addEventListener('click', async function () {
-    if (!stream) {
-        alert('攝影機尚未啟動！');
-        return;
-    }
-
-    // 取得攝影機 track
-    if (!track) {
-        track = stream.getVideoTracks()[0];
-    }
-    const capabilities = track.getCapabilities();
-
-    // 檢查是否支援手電筒
-    if (!capabilities.torch) {
-        alert('此裝置不支援手電筒');
-        return;
-    }
-
-    try {
-        isTorchOn = !isTorchOn;
-        await track.applyConstraints({ advanced: [{ torch: isTorchOn }] });
-        flashBtn.textContent = isTorchOn ? '關閉手電筒' : '開啟手電筒';
-    } catch (e) {
-        alert('手電筒操作失敗！');
-        isTorchOn = false;
-        flashBtn.textContent = '開啟手電筒';
-    }
 });
