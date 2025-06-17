@@ -108,7 +108,7 @@ function getTurbidityCurveTable() {
 function getTurbidityFromCurve(mainContrast, stdCurveTable) {
     let x = stdCurveTable.map(e => e.contrast);
     let y = stdCurveTable.map(e => e.turbidity);
-    let fit = quadraticFit(x, y); // 您原本已經寫好
+    let fit = quadraticFit(x, y);
     return fit.a * mainContrast * mainContrast + fit.b * mainContrast + fit.c;
 }
 
@@ -574,6 +574,10 @@ analyzeBtn.addEventListener("click", function () {
     } else {
         let mainContrast = getContrast(redBox1);
         let turbidity = getTurbidityFromCurve(mainContrast, stdCurveTable);
+        // 顯示三圈數值方便檢查
+        stdCurveTable.forEach((e,i)=>{
+            resultHtml += `<div>標定圈${i+1}對比度: ${e.contrast.toFixed(4)}，JTU=${e.turbidity}</div>`;
+        });
         resultHtml += `<div style="margin-top:8px;">
             <b>主圈對應濁度：</b><br>
             <span style="font-size:18px;color:#EF6C00;">${turbidity.toFixed(2)} JTU (對比度曲線)</span>
